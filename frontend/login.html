@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>Login — Smart Recipe Finder</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍳</text></svg>">
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="/js/app.js"></script>
+</head>
+<body>
+<div class="auth-bg-blob"></div>
+<button class="theme-btn" id="themeBtn" onclick="Theme.toggle()" style="position:fixed;top:1.2rem;right:1.5rem;z-index:100">🌙</button>
+
+<div class="auth-page">
+  <div class="auth-card page-fade">
+
+    <div class="auth-logo">
+      <h1>🍳 Smart <span>Recipe Finder</span></h1>
+      <p>Your personal recipe collection</p>
+    </div>
+
+    <!-- Tabs (3) -->
+    <div class="auth-tabs" id="tabsRow">
+      <button class="auth-tab active" id="tab-login"    onclick="switchTab('login')">Log In</button>
+      <button class="auth-tab"        id="tab-register" onclick="switchTab('register')">Sign Up</button>
+      <button class="auth-tab"        id="tab-forgot"   onclick="switchTab('forgot')" style="font-size:.8rem">Forgot?</button>
+    </div>
+
+    <div class="auth-error" id="authError"></div>
+
+    <!-- ── LOGIN ── -->
+    <form class="auth-form" id="loginForm" onsubmit="handleLogin(event)">
+      <div class="form-group">
+        <label class="form-label">Email or Username <span>*</span></label>
+        <div class="input-icon-wrap"><span class="ii">👤</span>
+          <input type="text" class="form-input" id="loginEmail" placeholder="admin or admin@smartrecipe.com" required autocomplete="nope">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Password <span>*</span></label>
+        <div class="input-icon-wrap" style="position:relative">
+          <span class="ii">🔒</span>
+          <input type="password" class="form-input" id="loginPw" required autocomplete="new-password">
+          <button type="button" class="pw-toggle" onclick="togglePw('loginPw',this)">👁</button>
+        </div>
+        <div style="text-align:right;margin-top:-.3rem">
+          <a href="#" onclick="switchTab('forgot');return false" style="font-size:.78rem;color:var(--text-muted)">Forgot password?</a>
+        </div>
+
+      <button type="submit" class="btn btn-primary" style="width:100%" id="loginBtn">Log In →</button>
+      <p style="text-align:center;font-size:.82rem;color:var(--text-muted)">No account? <a href="#" onclick="switchTab('register');return false">Sign up free</a></p>
+    </form>
+
+    <!-- ── REGISTER ── -->
+    <form class="auth-form" id="registerForm" onsubmit="handleRegister(event)" style="display:none">
+      <div class="form-grid-2">
+        <div class="form-group">
+          <label class="form-label">Username <span>*</span></label>
+          <div class="input-icon-wrap"><span class="ii">👤</span>
+            <input type="text" class="form-input" id="regUser" placeholder="chefjohn" required minlength="3" autocomplete="nope">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Email <span>*</span></label>
+          <div class="input-icon-wrap"><span class="ii">📧</span>
+            <input type="email" class="form-input" id="regEmail" placeholder="you@email.com" required autocomplete="nope">
+          </div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Password <span>*</span></label>
+        <div class="input-icon-wrap" style="position:relative"><span class="ii">🔒</span>
+          <input type="password" class="form-input" id="regPw" required minlength="6" autocomplete="new-password">
+          <button type="button" class="pw-toggle" onclick="togglePw('regPw',this)">👁</button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Confirm Password <span>*</span></label>
+        <div class="input-icon-wrap"><span class="ii">🔒</span>
+          <input type="password" class="form-input" id="regConfirm" required autocomplete="new-password">
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%" id="registerBtn">Create Account →</button>
+      <p style="text-align:center;font-size:.82rem;color:var(--text-muted)">Have an account? <a href="#" onclick="switchTab('login');return false">Log in</a></p>
+    </form>
+
+    <!-- ── FORGOT PASSWORD ── -->
+    <form class="auth-form" id="forgotForm" onsubmit="handleForgot(event)" style="display:none">
+      <p style="font-size:.87rem;color:var(--text-muted);margin-bottom:.3rem">Enter your registered email and we'll send a reset link.</p>
+      <div class="form-group">
+        <label class="form-label">Email <span>*</span></label>
+        <div class="input-icon-wrap"><span class="ii">📧</span>
+          <input type="email" class="form-input" id="forgotEmail" placeholder="you@email.com" required>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%" id="forgotBtn">Send Reset Link 📬</button>
+      <p style="text-align:center;font-size:.82rem;color:var(--text-muted)"><a href="#" onclick="switchTab('login');return false">← Back to Login</a></p>
+    </form>
+
+  </div>
+</div>
+
+<script>
+if(Auth.isLoggedIn()) window.location.href='/';
+if(getQueryParam('tab')==='register') switchTab('register');
+
+function switchTab(tab){
+  ['login','register','forgot'].forEach(t=>{
+    document.getElementById(`${t}Form`).style.display = t===tab?'flex':'none';
+    document.getElementById(`tab-${t}`)?.classList.toggle('active', t===tab);
+  });
+  document.getElementById('authError').classList.remove('show');
+}
+function showErr(m){ const e=document.getElementById('authError'); e.textContent=m; e.classList.add('show'); }
+function clearErr(){ document.getElementById('authError').classList.remove('show'); }
+function togglePw(id,btn){ const i=document.getElementById(id); i.type=i.type==='password'?'text':'password'; btn.textContent=i.type==='text'?'🙈':'👁'; }
+
+async function handleLogin(e){
+  e.preventDefault(); clearErr();
+  const btn=document.getElementById('loginBtn'); btn.disabled=true; btn.textContent='Logging in…';
+  try{
+    const d=await API.post('/api/auth/login',{ email:document.getElementById('loginEmail').value, password:document.getElementById('loginPw').value });
+    Auth.login(d.token,d.user);
+    toast(`Welcome back, ${d.user.username}! 👋`,'success');
+    setTimeout(()=>{ window.location.href=d.user.role==='admin'?'/admin.html':'/'; },800);
+  }catch(err){ showErr(err.message); toast(err.message, 'error'); btn.disabled=false; btn.textContent='Log In →'; }
+}
+async function handleRegister(e){
+  e.preventDefault(); clearErr();
+  if(document.getElementById('regPw').value!==document.getElementById('regConfirm').value){ showErr('Passwords do not match'); toast('Passwords do not match', 'error'); return; }
+  const btn=document.getElementById('registerBtn'); btn.disabled=true; btn.textContent='Creating…';
+  try{
+    const d=await API.post('/api/auth/register',{ username:document.getElementById('regUser').value, email:document.getElementById('regEmail').value, password:document.getElementById('regPw').value });
+    Auth.login(d.token,d.user);
+    toast('Account created! Welcome 🎉','success');
+    setTimeout(()=>window.location.href='/',800);
+  }catch(err){ showErr(err.message); toast(err.message, 'error'); btn.disabled=false; btn.textContent='Create Account →'; }
+}
+async function handleForgot(e){
+  e.preventDefault(); clearErr();
+  const btn=document.getElementById('forgotBtn'); btn.disabled=true; btn.textContent='Sending…';
+  try{
+    await API.post('/api/auth/forgot-password',{ email:document.getElementById('forgotEmail').value });
+    toast('Reset link sent! Check your inbox 📬','success');
+    switchTab('login');
+  }catch(err){ showErr(err.message); toast(err.message, 'error'); }
+  finally{ btn.disabled=false; btn.textContent='Send Reset Link 📬'; }
+}
+</script>
+</body>
+</html>

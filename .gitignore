@@ -1,0 +1,15 @@
+# Dependencies
+backend/node_modules/
+
+# Environment variables (NEVER upload this - has your passwords!)
+backend/.env
+
+# Uploaded files
+backend/uploads/images/*
+backend/uploads/videos/*
+!backend/uploads/images/.gitkeep
+!backend/uploads/videos/.gitkeep
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>Recipe — Smart Recipe Finder</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍳</text></svg>">
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="/js/app.js"></script>
+</head>
+<body>
+<div class="detail-wrap">
+
+  <!-- Back bar -->
+  <div style="background:var(--bg-2);padding:.6rem clamp(1rem,4vw,3rem);display:flex;align-items:center;gap:1rem;border-bottom:1px solid var(--border);margin-top:var(--nav-h)">
+    <a href="/" style="font-size:.84rem;color:var(--text-muted);display:flex;align-items:center;gap:.3rem">← Back to Recipes</a>
+    <div id="breadcrumb" style="font-size:.8rem;color:var(--text-muted);margin-left:auto"></div>
+  </div>
+
+  <div class="container" style="padding-top:2rem;padding-bottom:4rem" id="recipeWrap">
+    <!-- Loaded dynamically -->
+    <div style="display:flex;justify-content:center;padding:4rem;color:var(--text-muted)">Loading recipe…</div>
+  </div>
+</div>
+
+<script>
+renderNavbar('');
+
+const id = getQueryParam('id');
+if(!id) window.location.href='/';
+
+async function load(){
+  try {
+    const [r, favIds] = await Promise.all([
+      API.get(`/api/recipes/${id}`),
+      Auth.isLoggedIn() ? API.get('/api/favorites/ids') : Promise.resolve([])
+    ]);
+    _favIds = favIds||[];
+    document.title = `${r.title} — Smart Recipe Finder`;
+
+    const imgs    = typeof r.images==='string' ? JSON.parse(r.images||'[]') : (r.images||[]);
+    const ings    = typeof r.ingredients==='string' ? JSON.parse(r.ingredients||'[]') : (r.ingredients||[]);
+    const steps   = typeof r.steps==='string' ? JSON.parse(r.steps||'[]') : (r.steps||[]);
+    const tags    = typeof r.tags==='string' ? JSON.parse(r.tags||'[]') : (r.tags||[]);
+    const total   = (r.prep_time||0)+(r.cook_time||0);
+    const isFav   = _favIds.includes(r.id);
+    const mt      = r.meal_type||'Any';
+
+    document.getElementById('breadcrumb').innerHTML =
+      `<span style="color:var(--accent)">${MEAL_TYPE_ICONS[mt]||''} ${mt}</span> · ${r.cuisine||''}`;
+
+    const mainImg = imgs[0]||'https://images.unsplash.com/photo-1498837167922-ddd27525d352?w=800';
+
+    document.getElementById('recipeWrap').innerHTML = `
+      <div class="detail-grid page-fade">
+        <!-- Left: Gallery + Video + Details -->
+        <div>
+          <!-- Gallery -->
+          <div class="gallery-main">
+            <img id="mainImg" src="${mainImg}" alt="${r.title}" onerror="this.src='https://images.unsplash.com/photo-1498837167922-ddd27525d352?w=800'">
+          </div>
+          ${imgs.length>1?`
+          <div class="gallery-thumbs">
+            ${imgs.map((img,i)=>`
+              <div class="gallery-thumb ${i===0?'active':''}" onclick="setImg('${img}',this)">
+                <img src="${img}" alt="" onerror="this.src='https://images.unsplash.com/photo-1498837167922-ddd27525d352?w=200'">
+              </div>`).join('')}
+          </div>`:''}
+
+          <!-- Video -->
+          ${r.video ? `
+          <div style="margin-top:1.5rem">
+            <h3 class="recipe-section-title">📹 Video Guide</h3>
+            <div class="video-wrap">
+              ${r.video.includes('youtube')||r.video.includes('youtu.be')
+                ? `<iframe src="${r.video}" allowfullscreen title="Recipe video"></iframe>`
+                : `<video src="${r.video}" controls></video>`}
+            </div>
+          </div>` : ''}
+
+          <!-- Ingredients -->
+          <div style="margin-top:2rem">
+            <h3 class="recipe-section-title">🛒 Ingredients</h3>
+            <ul class="ingredients-list">
+              ${ings.map((ing,i)=>`
+                <li class="ing-item" id="ing-${i}" onclick="toggleIng(${i})">
+                  <label>${ing}</label>
+                </li>`).join('')}
+            </ul>
+          </div>
+
+          <!-- Steps -->
+          <div style="margin-top:2rem">
+            <h3 class="recipe-section-title">👨‍🍳 Method</h3>
+            <ol class="steps-list">
+              ${steps.map((s,i)=>`
+                <li class="step-item">
+                  <div class="step-num">${i+1}</div>
+                  <div class="step-text">${s}</div>
+                </li>`).join('')}
+            </ol>
+          </div>
+
+          <!-- Tags -->
+          ${tags.length ? `
+          <div style="margin-top:1.5rem">
+            <div class="tags-row">
+              ${tags.map(t=>`<span class="tag">#${t}</span>`).join('')}
+            </div>
+          </div>` : ''}
+        </div>
+
+        <!-- Right: Info card -->
+        <div>
+          <div class="info-card">
+            <div class="recipe-cuisine">${r.cuisine||''} · ${MEAL_TYPE_ICONS[mt]||''} ${mt}</div>
+            <h1 class="recipe-title-lg">${r.title}</h1>
+            <p style="color:var(--text-muted);font-size:.9rem;line-height:1.6">${r.description||''}</p>
+
+            <div class="stats-grid">
+              <div class="stat-box"><div class="stat-val">${r.prep_time||'—'}m</div><div class="stat-lbl">Prep Time</div></div>
+              <div class="stat-box"><div class="stat-val">${r.cook_time||'—'}m</div><div class="stat-lbl">Cook Time</div></div>
+              <div class="stat-box"><div class="stat-val">${total||'—'}m</div><div class="stat-lbl">Total Time</div></div>
+              <div class="stat-box"><div class="stat-val">${r.servings||4}</div><div class="stat-lbl">Servings</div></div>
+            </div>
+
+            <div style="display:flex;gap:.6rem;flex-wrap:wrap;margin:.8rem 0">
+              <span class="diff-badge ${r.difficulty||'Medium'}">${r.difficulty||'Medium'}</span>
+              <span style="font-size:.82rem;color:var(--text-muted)">⭐ ${r.rating||4.5} rating</span>
+              ${r.featured?'<span class="card-badge" style="position:static">✨ Featured</span>':''}
+            </div>
+
+            ${Auth.isLoggedIn() ? `
+            <button class="fav-btn-lg ${isFav?'active':''}" id="favBtnLg" onclick="toggleFavLg()">
+              ${isFav?'❤️ In Favorites':'🤍 Save to Favorites'}
+            </button>` : `
+            <a href="/login.html" class="btn btn-outline" style="width:100%;margin-top:.8rem;justify-content:center">
+              🔐 Login to Save Favorites
+            </a>`}
+
+            <button class="btn btn-secondary btn-sm" style="width:100%;margin-top:.6rem" onclick="addToPlanner()">
+              📅 Add to Meal Planner
+            </button>
+
+            <div style="display:flex;gap:.5rem;margin-top:.8rem">
+              <button class="btn btn-ghost btn-sm" onclick="window.print()" style="flex:1">🖨 Print</button>
+              <button class="btn btn-ghost btn-sm" onclick="shareRecipe()" style="flex:1">🔗 Share</button>
+            </div>
+          </div>
+        </div>
+      </div>`;
+  } catch(e){
+    document.getElementById('recipeWrap').innerHTML = `<div class="empty-state"><div class="es-icon">⚠️</div><h3>Recipe Not Found</h3><p>${e.message}</p><a href="/" class="btn btn-primary" style="margin-top:1rem">Go Home</a></div>`;
+  }
+  await loadFeedbacks();
+}
+
+function setImg(src,thumb){
+  document.getElementById('mainImg').src = src;
+  document.querySelectorAll('.gallery-thumb').forEach(t=>t.classList.remove('active'));
+  thumb.classList.add('active');
+}
+function toggleIng(i){ document.getElementById(`ing-${i}`)?.classList.toggle('checked'); }
+async function toggleFavLg(){
+  const btn = document.getElementById('favBtnLg');
+  await toggleFavorite(id, null);
+  const isFav = _favIds.includes(id);
+  btn.className = `fav-btn-lg ${isFav?'active':''}`;
+  btn.innerHTML = isFav ? '❤️ In Favorites' : '🤍 Save to Favorites';
+}
+function addToPlanner(){
+  if(!Auth.isLoggedIn()){ window.location.href='/login.html'; return; }
+  window.location.href=`/meal-planner.html`;
+}
+function shareRecipe(){
+  navigator.clipboard?.writeText(window.location.href).then(()=>toast('Link copied!','success')).catch(()=>toast('Copy the URL from your browser','default'));
+}
+
+async function loadFeedbacks() {
+  if (!document.getElementById('mainImg')) return; // recipe failed to load
+  let res = [];
+  try {
+    res = await API.get(`/api/feedbacks/recipe/${id}`);
+  } catch(e) { 
+    console.error('Could not load feedbacks:', e); 
+  }
+  
+  const html = `
+    <div style="margin-top:4rem; border-top:1px solid var(--border); padding-top:2.5rem; page-break-before: always;" class="page-fade">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h2 class="section-title" style="margin-bottom:0">💬 Community Feedback</h2>
+        <button class="btn btn-outline btn-sm" onclick="openFeedbackModal('suggestion')">💡 Suggest an Edit</button>
+      </div>
+      
+      <div style="margin-top:2rem; max-width:800px">
+        ${Auth.isLoggedIn() ? `
+        <form onsubmit="submitFeedback(event, 'feedback')" style="display:flex; gap:1rem; margin-bottom:2.5rem">
+          <input type="text" id="fbInput" class="form-input" style="flex:1" placeholder="Share your thoughts about this recipe..." required>
+          <button type="submit" class="btn btn-primary">Post</button>
+        </form>` : `
+        <div style="background:var(--bg-2); border:1px solid var(--border); padding:1rem; border-radius:var(--radius-sm); text-align:center; margin-bottom:2rem;">
+          <p style="color:var(--text-muted); font-size:0.9rem; margin:0">Please <a href="/login.html" style="color:var(--accent); font-weight:600">log in</a> to leave feedback.</p>
+        </div>
+        `}
+        
+        <div id="feedbacksList" style="display:flex; flex-direction:column; gap:1.2rem;">
+          ${res.length ? res.map(f => `
+            <div class="feedback-card" style="padding:1.4rem; background:var(--bg-2); border-radius:var(--radius-md); border:1px solid var(--border); box-shadow:var(--shadow-sm)">
+              <div style="display:flex; justify-content:space-between; margin-bottom:0.8rem">
+                <strong style="color:var(--text-1); font-size:1.05rem;">@${f.username}</strong>
+                <span style="font-size:0.85rem; color:var(--text-muted)">${new Date(f.created_at).toLocaleDateString()}</span>
+              </div>
+              <p style="font-size:0.95rem; color:var(--text-2); line-height:1.6; margin:0">${f.message}</p>
+            </div>
+          `).join('') : '<p style="color:var(--text-muted);font-size:0.95rem; text-align:center; padding:2rem; background:var(--bg-2); border-radius:var(--radius-md)">No feedback yet. Be the first!</p>'}
+        </div>
+      </div>
+    </div>
+  `;
+  
+  const wrap = document.getElementById('recipeWrap');
+  const fbDiv = document.createElement('div');
+  fbDiv.innerHTML = html;
+  wrap.appendChild(fbDiv);
+}
+
+async function submitFeedback(e, type) {
+  e.preventDefault();
+  const msgInput = document.getElementById(type === 'feedback' ? 'fbInput' : 'suggInput');
+  const message = msgInput.value.trim();
+  if(!message) return;
+  
+  try {
+    await API.post('/api/feedbacks', { recipe_id: id, type, message });
+    toast(type === 'feedback' ? 'Feedback posted! 🎉' : 'Suggestion sent to admin 📬', 'success');
+    if(type === 'feedback') {
+      msgInput.value = '';
+      setTimeout(() => location.reload(), 800);
+    } else {
+      closeFeedbackModal();
+    }
+  } catch(err) { toast(err.message, 'error'); }
+}
+
+function openFeedbackModal(type) {
+  if(!Auth.isLoggedIn()) { window.location.href='/login.html'; return; }
+  let modal = document.getElementById('fbModal');
+  if(!modal) {
+    modal = document.createElement('div');
+    modal.id = 'fbModal';
+    modal.className = 'modal-backdrop';
+    modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(4px);';
+    modal.innerHTML = `
+      <div class="modal-card" style="background:var(--bg-1); width:100%; max-width:500px; padding:2rem; border-radius:var(--radius-lg); box-shadow:var(--shadow-lg)">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem">
+          <h3 style="margin:0; font-size:1.3rem">💡 Suggest an Edit</h3>
+          <button onclick="closeFeedbackModal()" style="background:none; border:none; font-size:1.5rem; cursor:pointer; color:var(--text-muted)">&times;</button>
+        </div>
+        <form onsubmit="submitFeedback(event, 'suggestion')">
+          <div class="form-group">
+            <label class="form-label">What should be changed?</label>
+            <textarea id="suggInput" class="form-input" rows="4" required placeholder="Found a typo? Does the prep time seem off?" style="resize:vertical"></textarea>
+          </div>
+          <div style="display:flex; gap:1rem; margin-top:1rem">
+            <button type="button" class="btn btn-secondary" style="flex:1" onclick="closeFeedbackModal()">← Back</button>
+            <button type="submit" class="btn btn-primary" style="flex:1">Send to Admin</button>
+          </div>
+        </form>
+      </div>
+    `;
+    document.body.appendChild(modal);
+  }
+  modal.style.display = 'flex';
+}
+
+function closeFeedbackModal() {
+  document.getElementById('fbModal').style.display = 'none';
+}
+
+load();
+</script>
+</body>
+</html>

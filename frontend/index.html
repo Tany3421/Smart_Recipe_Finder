@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>Smart Recipe Finder — Discover Amazing Recipes</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍳</text></svg>">
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="/js/app.js"></script>
+</head>
+<body>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="hero-label">🌍 30+ Cuisines · Indian Specials · Fresh Salads · Every Meal</div>
+  <h1 class="hero-title">Find Recipes You'll <em>Actually</em> Cook</h1>
+  <p class="hero-sub">From rich Indian curries to crisp salads and everything in between — with photos, videos, and step-by-step guides.</p>
+  <form class="search-bar" onsubmit="doSearch(event)" style="display:flex;gap:0.5rem;">
+    <input type="text" id="searchInput" placeholder="Search butter chicken, caesar, biryani…" autocomplete="off" style="flex:1;">
+    <button type="button" class="btn btn-outline" id="voiceBtn" onclick="toggleVoiceSearch()" title="Voice Search" style="border:none;background:transparent;font-size:1.5rem;padding:0 0.5rem;cursor:pointer;">🎤</button>
+    <button type="submit" class="search-btn">🔍 Search</button>
+  </form>
+</section>
+
+<main class="container page-wrap" style="padding-top:1rem">
+
+  <!-- Meal Type Tabs -->
+  <div class="meal-tabs" id="mealTabs">
+    <button class="meal-tab active" data-mt="" onclick="setMealTab('',this)"><span class="tab-icon">🍽</span> All</button>
+    <button class="meal-tab" data-mt="Breakfast" onclick="setMealTab('Breakfast',this)"><span class="tab-icon">🌅</span> Breakfast</button>
+    <button class="meal-tab" data-mt="Brunch"    onclick="setMealTab('Brunch',this)">   <span class="tab-icon">☀️</span> Brunch</button>
+    <button class="meal-tab" data-mt="Lunch"     onclick="setMealTab('Lunch',this)">    <span class="tab-icon">🌞</span> Lunch</button>
+    <button class="meal-tab" data-mt="Dinner"    onclick="setMealTab('Dinner',this)">   <span class="tab-icon">🌙</span> Dinner</button>
+    <button class="meal-tab" data-mt="Snack"     onclick="setMealTab('Snack',this)">    <span class="tab-icon">🍿</span> Snacks</button>
+    <button class="meal-tab" data-mt="Dessert"   onclick="setMealTab('Dessert',this)">  <span class="tab-icon">🍰</span> Desserts</button>
+  </div>
+
+  <!-- Filters -->
+  <div class="filters-bar">
+    <select class="filter-select" id="cuisineFilter" onchange="applyFilters()">
+      <option value="">All Cuisines</option>
+    </select>
+    <select class="filter-select" id="diffFilter" onchange="applyFilters()">
+      <option value="">All Levels</option>
+      <option>Easy</option><option>Medium</option><option>Hard</option>
+    </select>
+    <select class="filter-select" id="sortFilter" onchange="applyFilters()">
+      <option value="">Sort By</option>
+      <option value="rating">Top Rated</option>
+      <option value="quick">Quickest</option>
+    </select>
+    <button class="filter-select" id="featBtn" onclick="toggleFeatured(this)" style="cursor:pointer">✨ Featured</button>
+    <span style="margin-left:auto;font-size:.8rem;color:var(--text-muted)" id="countLabel"></span>
+  </div>
+
+  <!-- Section header -->
+  <div class="section-hdr">
+    <h2 class="section-title" id="sectionTitle">All Recipes</h2>
+  </div>
+
+  <!-- Grid -->
+  <div class="recipes-grid" id="recipeGrid">
+    <div class="skeleton skeleton-card"></div>
+    <div class="skeleton skeleton-card"></div>
+    <div class="skeleton skeleton-card"></div>
+    <div class="skeleton skeleton-card"></div>
+    <div class="skeleton skeleton-card"></div>
+    <div class="skeleton skeleton-card"></div>
+  </div>
+
+  <!-- Pagination -->
+  <div class="pagination" id="pagination"></div>
+</main>
+
+<script>
+renderNavbar('home');
+
+const state = { page:1, search:'', meal_type:'', cuisine:'', difficulty:'', featured:false, sort:'' };
+
+async function loadRecipes(){
+  const grid = document.getElementById('recipeGrid');
+  const p = new URLSearchParams();
+  if(state.search)    p.set('search',    state.search);
+  if(state.meal_type) p.set('meal_type', state.meal_type);
+  if(state.cuisine)   p.set('cuisine',   state.cuisine);
+  if(state.difficulty)p.set('difficulty',state.difficulty);
+  if(state.featured)  p.set('featured',  'true');
+  p.set('page', state.page); p.set('limit', 9);
+
+  try {
+    await loadFavIds();
+    const data = await API.get(`/api/recipes?${p}`);
+    let recs = data.recipes||[];
+    if(state.sort==='rating') recs.sort((a,b)=>(b.rating||0)-(a.rating||0));
+    if(state.sort==='quick')  recs.sort((a,b)=>((a.prep_time||0)+(a.cook_time||0))-((b.prep_time||0)+(b.cook_time||0)));
+    document.getElementById('countLabel').textContent = `${data.total} recipe${data.total!==1?'s':''}`;
+
+    if(!recs.length){
+      grid.innerHTML=`<div class="empty-state" style="grid-column:1/-1"><div class="es-icon">🔍</div><h3>No Recipes Found</h3><p>Try adjusting filters</p></div>`;
+    } else {
+      grid.innerHTML = recs.map(r=>renderRecipeCard(r,_favIds)).join('');
+    }
+    renderPagination(data.page, data.pages);
+  } catch(e){
+    grid.innerHTML=`<div class="empty-state" style="grid-column:1/-1"><div class="es-icon">⚠️</div><h3>Error</h3><p>${e.message}</p></div>`;
+  }
+}
+
+async function loadFilters(){
+  try {
+    const meta = await API.get('/api/recipes/meta');
+    const sel  = document.getElementById('cuisineFilter');
+    meta.cuisines.forEach(c=>{ const o=document.createElement('option'); o.value=o.textContent=c; sel.appendChild(o); });
+  } catch {}
+}
+
+function doSearch(e){ e.preventDefault(); state.search=document.getElementById('searchInput').value.trim(); state.page=1; document.getElementById('sectionTitle').textContent=state.search?`Results for "${state.search}"`:'All Recipes'; loadRecipes(); }
+function setMealTab(mt,btn){ state.meal_type=mt; state.page=1; document.querySelectorAll('.meal-tab').forEach(b=>b.classList.remove('active')); btn.classList.add('active'); document.getElementById('sectionTitle').textContent=mt?`${MEAL_TYPE_ICONS[mt]||''} ${mt} Recipes`:'All Recipes'; loadRecipes(); }
+function applyFilters(){ state.cuisine=document.getElementById('cuisineFilter').value; state.difficulty=document.getElementById('diffFilter').value; state.sort=document.getElementById('sortFilter').value; state.page=1; loadRecipes(); }
+function toggleFeatured(btn){ state.featured=!state.featured; btn.style.background=state.featured?'var(--accent)':''; btn.style.color=state.featured?'#FFF':''; state.page=1; loadRecipes(); }
+function renderPagination(page,pages){
+  const el=document.getElementById('pagination');
+  if(pages<=1){el.innerHTML='';return;}
+  let h=`<button class="page-btn" onclick="goPage(${page-1})" ${page===1?'disabled':''}>‹</button>`;
+  for(let i=1;i<=pages;i++) h+=`<button class="page-btn ${i===page?'active':''}" onclick="goPage(${i})">${i}</button>`;
+  h+=`<button class="page-btn" onclick="goPage(${page+1})" ${page===pages?'disabled':''}>›</button>`;
+  el.innerHTML=h;
+}
+function goPage(p){ state.page=p; loadRecipes(); window.scrollTo({top:0,behavior:'smooth'}); }
+
+// URL search param support
+const urlSearch = getQueryParam('search');
+if(urlSearch){ document.getElementById('searchInput').value=urlSearch; state.search=urlSearch; }
+
+let mediaRecorder;
+let audioChunks = [];
+let isRecording = false;
+
+async function toggleVoiceSearch() {
+  const btn = document.getElementById('voiceBtn');
+  if (isRecording) {
+    mediaRecorder.stop();
+    btn.style.animation = '';
+    btn.textContent = '⏳';
+    return;
+  }
+  
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    // Try webm, if it fails maybe fallback, but WebM is standard on most browsers.
+    const options = MediaRecorder.isTypeSupported('audio/webm') ? { mimeType: 'audio/webm' } : {};
+    mediaRecorder = new MediaRecorder(stream, options);
+    audioChunks = [];
+    
+    mediaRecorder.ondataavailable = e => {
+      if (e.data.size > 0) audioChunks.push(e.data);
+    };
+    
+    mediaRecorder.onstop = async () => {
+      const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+      stream.getTracks().forEach(track => track.stop());
+      
+      const formData = new FormData();
+      formData.append('audio', audioBlob);
+      
+      try {
+        const res = await fetch('/api/recipes/voice-search', {
+          method: 'POST',
+          body: formData
+        });
+        const data = await res.json();
+        if (data.text) {
+          document.getElementById('searchInput').value = data.text.trim();
+          btn.textContent = '🎤';
+          doSearch(new Event('submit', { cancelable: true }));
+        } else {
+          toast(data.error || 'Could not understand voice.', 'error');
+          btn.textContent = '🎤';
+        }
+      } catch (err) {
+        toast('Voice search failed.', 'error');
+        btn.textContent = '🎤';
+      }
+      isRecording = false;
+    };
+    
+    mediaRecorder.start();
+    isRecording = true;
+    btn.textContent = '🔴';
+    // Let's add an inline style animation or just rely on the red dot to convey recording
+  } catch (err) {
+    toast('Microphone access denied.', 'error');
+  }
+}
+
+loadFilters();
+loadRecipes();
+</script>
+</body>
+</html>

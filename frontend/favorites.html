@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>My Favorites — Smart Recipe Finder</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍳</text></svg>">
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="/js/app.js"></script>
+</head>
+<body>
+<main class="container page-wrap">
+
+  <div class="section-hdr" style="margin-bottom:.5rem">
+    <h1 class="section-title">❤️ My Favorites</h1>
+    <span class="section-count" id="favCount"></span>
+  </div>
+  <p style="color:var(--text-muted);font-size:.88rem;margin-bottom:2rem">Recipes you've saved for quick access.</p>
+
+  <!-- Meal type filter tabs -->
+  <div class="meal-tabs" id="favTabs">
+    <button class="meal-tab active" onclick="filterFavs('',this)">🍽 All</button>
+    <button class="meal-tab" onclick="filterFavs('Breakfast',this)">🌅 Breakfast</button>
+    <button class="meal-tab" onclick="filterFavs('Brunch',this)">☀️ Brunch</button>
+    <button class="meal-tab" onclick="filterFavs('Lunch',this)">🌞 Lunch</button>
+    <button class="meal-tab" onclick="filterFavs('Dinner',this)">🌙 Dinner</button>
+    <button class="meal-tab" onclick="filterFavs('Snack',this)">🍿 Snacks</button>
+    <button class="meal-tab" onclick="filterFavs('Dessert',this)">🍰 Desserts</button>
+  </div>
+
+  <div class="recipes-grid" id="favsGrid">
+    <div class="skeleton skeleton-card"></div>
+    <div class="skeleton skeleton-card"></div>
+    <div class="skeleton skeleton-card"></div>
+  </div>
+</main>
+
+<script>
+if(!Auth.isLoggedIn()){ window.location.href='/login.html'; }
+renderNavbar('favs');
+
+let allFavs = [];
+
+async function load(){
+  try {
+    await loadFavIds();
+    allFavs = await API.get('/api/favorites') || [];
+    document.getElementById('favCount').textContent = `${allFavs.length} saved`;
+    renderFavs(allFavs);
+  } catch(e){
+    document.getElementById('favsGrid').innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="es-icon">⚠️</div><h3>Error</h3><p>${e.message}</p></div>`;
+  }
+}
+
+function filterFavs(mt, btn){
+  document.querySelectorAll('.meal-tab').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  const filtered = mt ? allFavs.filter(r=>r.meal_type===mt) : allFavs;
+  renderFavs(filtered);
+}
+
+function renderFavs(list){
+  const grid = document.getElementById('favsGrid');
+  if(!list.length){
+    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1">
+      <div class="es-icon">💔</div>
+      <h3>No Favorites Yet</h3>
+      <p>Browse recipes and tap the ❤️ to save them here.</p>
+      <a href="/" class="btn btn-primary" style="margin-top:1.2rem">Explore Recipes</a>
+    </div>`;
+    return;
+  }
+  grid.innerHTML = list.map(r => renderRecipeCard(r, _favIds)).join('');
+}
+
+load();
+</script>
+</body>
+</html>

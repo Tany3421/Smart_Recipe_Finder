@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>Admin Panel — Smart Recipe Finder</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍳</text></svg>">
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="/js/app.js"></script>
+</head>
+<body>
+<div class="admin-layout">
+
+  <!-- Sidebar -->
+  <aside class="admin-sidebar">
+    <div class="sidebar-label">Main</div>
+    <button class="sidebar-link active" id="sb-dashboard" onclick="showPanel('dashboard')"><span class="si">📊</span> Dashboard</button>
+    <button class="sidebar-link" id="sb-recipes"   onclick="showPanel('recipes')">  <span class="si">🍽</span> Recipes</button>
+    <button class="sidebar-link" id="sb-users"     onclick="showPanel('users')">    <span class="si">👥</span> Users</button>
+    <button class="sidebar-link" id="sb-feedbacks" onclick="showPanel('feedbacks')"><span class="si">💬</span> Feedback</button>
+    <div class="sidebar-label" style="margin-top:auto">Account</div>
+    <button class="sidebar-link" onclick="Auth.logout()"><span class="si">🚪</span> Log Out</button>
+  </aside>
+
+  <!-- Main -->
+  <div class="admin-main">
+    <div class="admin-content">
+
+      <!-- ── DASHBOARD ── -->
+      <div class="admin-tab-panel active" id="panel-dashboard">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;flex-wrap:wrap;gap:.75rem">
+          <div><h1 style="font-family:var(--font-d);font-size:1.8rem">⚡ Dashboard</h1>
+            <p style="color:var(--text-muted);font-size:.85rem" id="dashGreet"></p></div>
+          <button class="theme-btn" id="themeBtn" onclick="Theme.toggle()">🌙</button>
+        </div>
+        <div class="stats-grid" id="statsGrid">
+          <div class="skeleton" style="height:90px"></div>
+          <div class="skeleton" style="height:90px"></div>
+          <div class="skeleton" style="height:90px"></div>
+          <div class="skeleton" style="height:90px"></div>
+        </div>
+        <div class="data-table-wrap">
+          <div class="table-header">
+            <span class="table-title">🆕 Recently Added Recipes</span>
+            <button class="btn btn-primary btn-sm" onclick="showPanel('recipes');openRecipeModal()">+ Add Recipe</button>
+          </div>
+          <div style="overflow-x:auto"><table class="data-table" id="recentTable">
+            <thead><tr><th>Image</th><th>Title</th><th>Meal Type</th><th>Cuisine</th><th>Difficulty</th></tr></thead>
+            <tbody id="recentBody"></tbody>
+          </table></div>
+        </div>
+      </div>
+
+      <!-- ── RECIPES ── -->
+      <div class="admin-tab-panel" id="panel-recipes">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;flex-wrap:wrap;gap:.75rem">
+          <h1 style="font-family:var(--font-d);font-size:1.8rem">🍽 Recipes</h1>
+          <button class="btn btn-primary btn-sm" onclick="openRecipeModal()">+ Add Recipe</button>
+        </div>
+
+        <!-- Meal type quick tabs -->
+        <div class="meal-tabs" style="padding-top:0;margin-bottom:1rem" id="adminMealTabs">
+          <button class="meal-tab active" onclick="loadRecipesAdmin('',this)">All</button>
+          <button class="meal-tab" onclick="loadRecipesAdmin('Breakfast',this)">🌅 Breakfast</button>
+          <button class="meal-tab" onclick="loadRecipesAdmin('Brunch',this)">☀️ Brunch</button>
+          <button class="meal-tab" onclick="loadRecipesAdmin('Lunch',this)">🌞 Lunch</button>
+          <button class="meal-tab" onclick="loadRecipesAdmin('Dinner',this)">🌙 Dinner</button>
+          <button class="meal-tab" onclick="loadRecipesAdmin('Snack',this)">🍿 Snack</button>
+          <button class="meal-tab" onclick="loadRecipesAdmin('Dessert',this)">🍰 Dessert</button>
+        </div>
+
+        <div class="data-table-wrap">
+          <div class="table-header">
+            <span class="table-title" id="recipePanelCount">All Recipes</span>
+            <input type="text" class="table-search" placeholder="Search…" oninput="filterRecipeTable(this.value)">
+          </div>
+          <div style="overflow-x:auto"><table class="data-table" id="recipesTable">
+            <thead><tr><th>Image</th><th>Title</th><th>Meal</th><th>Cuisine</th><th>Diff.</th><th>Rating</th><th>Actions</th></tr></thead>
+            <tbody id="recipesBody"></tbody>
+          </table></div>
+        </div>
+      </div>
+
+      <!-- ── USERS ── -->
+      <div class="admin-tab-panel" id="panel-users">
+        <h1 style="font-family:var(--font-d);font-size:1.8rem;margin-bottom:1.5rem">👥 Users</h1>
+        <div class="data-table-wrap">
+          <div class="table-header">
+            <span class="table-title" id="userCount">Users</span>
+            <input type="text" class="table-search" placeholder="Search…" oninput="filterUserTable(this.value)">
+          </div>
+          <div style="overflow-x:auto"><table class="data-table">
+            <thead><tr><th>Username</th><th>Email</th><th>Role</th><th>Favorites</th><th>Joined</th><th>Actions</th></tr></thead>
+            <tbody id="usersBody"></tbody>
+          </table></div>
+        </div>
+      </div>
+      
+      <!-- ── FEEDBACKS ── -->
+      <div class="admin-tab-panel" id="panel-feedbacks">
+        <h1 style="font-family:var(--font-d);font-size:1.8rem;margin-bottom:1.5rem">💬 System Feedback & Suggestions</h1>
+        <div class="data-table-wrap">
+          <div class="table-header">
+            <span class="table-title" id="fbCount">Feedback</span>
+            <input type="text" class="table-search" placeholder="Search..." oninput="filterFbTable(this.value)">
+          </div>
+          <div style="overflow-x:auto"><table class="data-table">
+            <thead><tr><th>User</th><th>Type</th><th>Message</th><th>Target Recipe</th><th>Status</th><th>Date</th><th>Action</th></tr></thead>
+            <tbody id="fbBody"></tbody>
+          </table></div>
+        </div>
+      </div>
+
+    </div><!-- /admin-content -->
+  </div><!-- /admin-main -->
+</div><!-- /admin-layout -->
+
+<!-- ── RECIPE MODAL ───────────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="recipeModal" onclick="if(event.target===this)closeRecipeModal()">
+  <div class="modal">
+    <div class="modal-hdr">
+      <h2 class="modal-title" id="modalTitle">Add Recipe</h2>
+      <button class="modal-close" onclick="closeRecipeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="editId">
+      <div class="form-grid-2">
+        <div class="form-group">
+          <label class="form-label">Title <span>*</span></label>
+          <input type="text" class="form-input" id="fTitle" required placeholder="e.g. Butter Chicken">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Category</label>
+          <input type="text" class="form-input" id="fCategory" placeholder="e.g. Curry">
+        </div>
+      </div>
+      <div class="form-grid-2">
+        <div class="form-group">
+          <label class="form-label">Meal Type</label>
+          <select class="form-select" id="fMealType">
+            <option>Any</option><option>Breakfast</option><option>Brunch</option>
+            <option>Lunch</option><option>Dinner</option><option>Snack</option><option>Dessert</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Cuisine</label>
+          <input type="text" class="form-input" id="fCuisine" placeholder="e.g. Indian">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Description</label>
+        <textarea class="form-textarea" id="fDesc" rows="2" placeholder="Short appetising description…"></textarea>
+      </div>
+      <div class="form-grid-2">
+        <div class="form-group"><label class="form-label">Prep Time (min)</label><input type="number" class="form-input" id="fPrep" min="0" value="15"></div>
+        <div class="form-group"><label class="form-label">Cook Time (min)</label><input type="number" class="form-input" id="fCook" min="0" value="30"></div>
+        <div class="form-group"><label class="form-label">Servings</label><input type="number" class="form-input" id="fServings" min="1" value="4"></div>
+        <div class="form-group"><label class="form-label">Difficulty</label>
+          <select class="form-select" id="fDiff"><option>Easy</option><option selected>Medium</option><option>Hard</option></select>
+        </div>
+        <div class="form-group"><label class="form-label">Rating (0-5)</label><input type="number" class="form-input" id="fRating" min="0" max="5" step="0.1" value="4.5"></div>
+        <div class="form-group" style="justify-content:flex-end;padding-bottom:.2rem">
+          <label class="form-label" style="flex-direction:row;align-items:center;gap:.5rem;cursor:pointer">
+            <input type="checkbox" id="fFeatured"> Featured ✨
+          </label>
+        </div>
+      </div>
+
+      <!-- Ingredients -->
+      <div class="form-group">
+        <label class="form-label">Ingredients</label>
+        <div class="dynamic-list" id="ingsContainer"></div>
+        <button type="button" class="btn btn-ghost btn-sm add-item-btn" onclick="addIng()">+ Add Ingredient</button>
+      </div>
+
+      <!-- Steps -->
+      <div class="form-group">
+        <label class="form-label">Steps</label>
+        <div class="dynamic-list" id="stepsContainer"></div>
+        <button type="button" class="btn btn-ghost btn-sm add-item-btn" onclick="addStep()">+ Add Step</button>
+      </div>
+
+      <!-- Image URLs -->
+      <div class="form-group">
+        <label class="form-label">Image URLs <span class="form-hint">(one per line)</span></label>
+        <textarea class="form-textarea" id="fImageUrls" rows="2" placeholder="https://images.unsplash.com/…"></textarea>
+      </div>
+
+      <!-- Upload -->
+      <div class="form-group">
+        <label class="form-label">Upload Images</label>
+        <div class="upload-zone" onclick="document.getElementById('imgUpload').click()">
+          <div class="uz-icon">🖼</div>
+          <p>Click to upload (JPG, PNG, WEBP)</p>
+          <input type="file" id="imgUpload" accept="image/*" multiple style="display:none" onchange="previewImgs(this)">
+        </div>
+        <div class="upload-previews" id="imgPreviews"></div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Video URL <span class="form-hint">(YouTube embed or direct)</span></label>
+        <input type="text" class="form-input" id="fVideo" placeholder="https://www.youtube.com/embed/…">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Tags <span class="form-hint">(comma separated)</span></label>
+        <input type="text" class="form-input" id="fTags" placeholder="indian, curry, quick">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeRecipeModal()">Cancel</button>
+      <button class="btn btn-primary" id="saveRecipeBtn" onclick="saveRecipe()">💾 Save Recipe</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── CONFIRM DELETE MODAL ───────────────────────────────────────────────── -->
+<div class="modal-overlay" id="confirmModal" onclick="if(event.target===this)closeConfirm()">
+  <div class="modal modal-sm">
+    <div class="modal-hdr"><h2 class="modal-title">Confirm Delete</h2><button class="modal-close" onclick="closeConfirm()">✕</button></div>
+    <div class="modal-body"><p id="confirmMsg" style="color:var(--text-2)"></p></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeConfirm()">Cancel</button>
+      <button class="btn btn-danger" id="confirmOkBtn">Delete</button>
+    </div>
+  </div>
+</div>
+
+<script>
+if(!Auth.isLoggedIn()||!Auth.isAdmin()){ window.location.href='/'; }
+renderNavbar('admin');
+
+document.getElementById('dashGreet').textContent = `Welcome back, ${Auth.getUser()?.username}! Here's your overview.`;
+
+let allRecipesData=[], allUsersData=[], currentMealFilter='';
+
+// ─── Panels ─────────────────────────────────────────────────────────────────
+function showPanel(p){
+  ['dashboard','recipes','users','feedbacks'].forEach(id=>{
+    document.getElementById(`panel-${id}`).classList.toggle('active', id===p);
+    document.getElementById(`sb-${id}`)?.classList.toggle('active', id===p);
+  });
+  if(p==='dashboard') loadDashboard();
+  if(p==='recipes')   loadRecipesAdmin(currentMealFilter);
+  if(p==='users')     loadUsers();
+  if(p==='feedbacks') loadFeedbacksAdmin();
+}
+
+// ─── Dashboard ──────────────────────────────────────────────────────────────
+async function loadDashboard(){
+  try {
+    const d = await API.get('/api/admin/stats');
+    document.getElementById('statsGrid').innerHTML = `
+      <div class="stat-card"><div class="sc-icon">🍽</div><div><h3>${d.totalRecipes}</h3><p>Total Recipes</p></div></div>
+      <div class="stat-card"><div class="sc-icon">👥</div><div><h3>${d.totalUsers}</h3><p>Registered Users</p></div></div>
+      <div class="stat-card"><div class="sc-icon">❤️</div><div><h3>${d.totalFavorites}</h3><p>Total Favorites</p></div></div>
+      <div class="stat-card"><div class="sc-icon">📅</div><div><h3>${d.totalPlans}</h3><p>Meal Plans</p></div></div>`;
+    document.getElementById('recentBody').innerHTML = d.recentRecipes.map(r=>`
+      <tr>
+        <td><img class="table-img" src="${getImg(r.images)}" alt="" onerror="this.src='https://images.unsplash.com/photo-1498837167922-ddd27525d352?w=80'"></td>
+        <td><strong>${r.title}</strong></td>
+        <td>${MEAL_TYPE_ICONS[r.meal_type]||''} ${r.meal_type||''}</td>
+        <td>${r.cuisine||'—'}</td>
+        <td><span class="diff-badge ${r.difficulty}">${r.difficulty}</span></td>
+      </tr>`).join('');
+  } catch(e){ toast(e.message,'error'); }
+}
+
+// ─── Recipes ─────────────────────────────────────────────────────────────────
+async function loadRecipesAdmin(mealType='', btn=null){
+  currentMealFilter = mealType;
+  if(btn){ document.querySelectorAll('#adminMealTabs .meal-tab').forEach(b=>b.classList.remove('active')); btn.classList.add('active'); }
+  try {
+    const p = new URLSearchParams({ limit:200 });
+    if(mealType) p.set('meal_type', mealType);
+    const d = await API.get(`/api/recipes?${p}`);
+    allRecipesData = d.recipes||[];
+    document.getElementById('recipePanelCount').textContent = `${allRecipesData.length} recipes${mealType?' · '+mealType:''}`;
+    renderRecipeTable(allRecipesData);
+  } catch(e){ toast(e.message,'error'); }
+}
+
+function renderRecipeTable(list){
+  document.getElementById('recipesBody').innerHTML = list.map(r=>`
+    <tr>
+      <td><img class="table-img" src="${getImg(r.images)}" alt="" onerror="this.src='https://images.unsplash.com/photo-1498837167922-ddd27525d352?w=80'"></td>
+      <td><strong>${r.title}</strong><br><span style="color:var(--text-muted);font-size:.72rem">${r.category||''}</span></td>
+      <td>${MEAL_TYPE_ICONS[r.meal_type]||''} ${r.meal_type||'Any'}</td>
+      <td>${r.cuisine||'—'}</td>
+      <td><span class="diff-badge ${r.difficulty}">${r.difficulty}</span></td>
+      <td>⭐ ${r.rating}</td>
+      <td class="table-actions">
+        <button class="btn btn-secondary btn-sm" onclick="editRecipe('${r.id}')">✏️</button>
+        <button class="btn btn-danger    btn-sm" onclick="confirmDelete('recipe','${r.id}','${r.title.replace(/'/g,"\\'")}')">🗑</button>
+      </td>
+    </tr>`).join('') || '<tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--text-muted)">No recipes</td></tr>';
+}
+
+function filterRecipeTable(q){ renderRecipeTable(allRecipesData.filter(r=>r.title.toLowerCase().includes(q.toLowerCase()))); }
+
+// ─── Users ──────────────────────────────────────────────────────────────────
+async function loadUsers(){
+  try {
+    allUsersData = await API.get('/api/admin/users')||[];
+    document.getElementById('userCount').textContent = `${allUsersData.length} users`;
+    renderUserTable(allUsersData);
+  } catch(e){ toast(e.message,'error'); }
+}
+
+function renderUserTable(list){
+  document.getElementById('usersBody').innerHTML = list.map(u=>`
+    <tr>
+      <td><strong>${u.username}</strong></td>
+      <td>${u.email}</td>
+      <td><span class="role-badge ${u.role}">${u.role}</span></td>
+      <td>❤️ ${u.favorites_count}</td>
+      <td style="color:var(--text-muted);font-size:.78rem">${formatDate(u.created_at)}</td>
+      <td>${u.id!==Auth.getUser()?.id?`<button class="btn btn-danger btn-sm" onclick="confirmDelete('user','${u.id}','${u.username}')">🗑</button>`:'<span style="color:var(--text-muted);font-size:.75rem">You</span>'}</td>
+    </tr>`).join('');
+}
+function filterUserTable(q){ renderUserTable(allUsersData.filter(u=>u.username.toLowerCase().includes(q.toLowerCase())||u.email.toLowerCase().includes(q.toLowerCase()))); }
+
+// ─── Feedbacks ──────────────────────────────────────────────────────────────
+let allFbData = [];
+async function loadFeedbacksAdmin(){
+  try {
+    allFbData = await API.get('/api/feedbacks')||[];
+    document.getElementById('fbCount').textContent = `${allFbData.length} items`;
+    renderFbTable(allFbData);
+  } catch(e){ toast(e.message,'error'); }
+}
+
+function renderFbTable(list){
+  document.getElementById('fbBody').innerHTML = list.map(f=>`
+    <tr>
+      <td><strong>${f.username}</strong></td>
+      <td><span class="role-badge ${f.type==='suggestion'?'admin':'user'}">${f.type}</span></td>
+      <td style="max-width:300px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${f.message}">${f.message}</td>
+      <td>${f.recipe_title ? `<a href="/recipe.html?id=${f.recipe_id}" target="_blank">${f.recipe_title}</a>` : '—'}</td>
+      <td><span class="diff-badge ${f.status==='pending'?'Medium':'Easy'}">${f.status}</span></td>
+      <td style="color:var(--text-muted);font-size:.78rem">${formatDate(f.created_at)}</td>
+      <td>
+        ${f.status==='pending'?`<button class="btn btn-primary btn-sm" onclick="markFbRead('${f.id}')">Mark Read ✓</button>`:'—'}
+      </td>
+    </tr>`).join('');
+}
+function filterFbTable(q){ renderFbTable(allFbData.filter(f=>f.message.toLowerCase().includes(q.toLowerCase())||f.username.toLowerCase().includes(q.toLowerCase()))); }
+
+async function markFbRead(id){
+  try {
+    await API.put(`/api/feedbacks/${id}/read`);
+    toast('Marked as read', 'success');
+    loadFeedbacksAdmin();
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+// ─── Recipe Modal ────────────────────────────────────────────────────────────
+function openRecipeModal(){ resetModal(); document.getElementById('recipeModal').classList.add('open'); addIng(); addIng(); addIng(); addStep(); addStep(); }
+function closeRecipeModal(){ document.getElementById('recipeModal').classList.remove('open'); }
+function resetModal(){
+  document.getElementById('editId').value='';
+  document.getElementById('modalTitle').textContent='Add Recipe';
+  ['fTitle','fCategory','fCuisine','fDesc','fImageUrls','fVideo','fTags'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('fPrep').value=15; document.getElementById('fCook').value=30;
+  document.getElementById('fServings').value=4; document.getElementById('fRating').value=4.5;
+  document.getElementById('fDiff').value='Medium'; document.getElementById('fMealType').value='Any';
+  document.getElementById('fFeatured').checked=false;
+  document.getElementById('ingsContainer').innerHTML='';
+  document.getElementById('stepsContainer').innerHTML='';
+  document.getElementById('imgPreviews').innerHTML='';
+}
+
+async function editRecipe(id){
+  try {
+    const r = await API.get(`/api/recipes/${id}`);
+    resetModal();
+    document.getElementById('editId').value      = r.id;
+    document.getElementById('modalTitle').textContent = 'Edit Recipe';
+    document.getElementById('fTitle').value      = r.title;
+    document.getElementById('fCategory').value   = r.category||'';
+    document.getElementById('fMealType').value   = r.meal_type||'Any';
+    document.getElementById('fCuisine').value    = r.cuisine||'';
+    document.getElementById('fDesc').value       = r.description||'';
+    document.getElementById('fPrep').value       = r.prep_time||0;
+    document.getElementById('fCook').value       = r.cook_time||0;
+    document.getElementById('fServings').value   = r.servings||4;
+    document.getElementById('fDiff').value       = r.difficulty||'Medium';
+    document.getElementById('fRating').value     = r.rating||4.5;
+    document.getElementById('fFeatured').checked = !!r.featured;
+    document.getElementById('fVideo').value      = r.video||'';
+    const ings  = typeof r.ingredients==='string'?JSON.parse(r.ingredients||'[]'):r.ingredients||[];
+    const steps = typeof r.steps==='string'?JSON.parse(r.steps||'[]'):r.steps||[];
+    const tags  = typeof r.tags==='string'?JSON.parse(r.tags||'[]'):r.tags||[];
+    const imgs  = typeof r.images==='string'?JSON.parse(r.images||'[]'):r.images||[];
+    ings.forEach(i=>addIng(i));
+    steps.forEach(s=>addStep(s));
+    document.getElementById('fTags').value       = tags.join(', ');
+    document.getElementById('fImageUrls').value  = imgs.join('\n');
+    document.getElementById('recipeModal').classList.add('open');
+    showPanel('recipes');
+  } catch(e){ toast(e.message,'error'); }
+}
+
+async function saveRecipe(){
+  const id  = document.getElementById('editId').value;
+  const fd  = new FormData();
+  fd.append('title',      document.getElementById('fTitle').value);
+  fd.append('category',   document.getElementById('fCategory').value);
+  fd.append('meal_type',  document.getElementById('fMealType').value);
+  fd.append('cuisine',    document.getElementById('fCuisine').value);
+  fd.append('description',document.getElementById('fDesc').value);
+  fd.append('prep_time',  document.getElementById('fPrep').value);
+  fd.append('cook_time',  document.getElementById('fCook').value);
+  fd.append('servings',   document.getElementById('fServings').value);
+  fd.append('difficulty', document.getElementById('fDiff').value);
+  fd.append('rating',     document.getElementById('fRating').value);
+  fd.append('featured',   document.getElementById('fFeatured').checked?'true':'false');
+  fd.append('video',      document.getElementById('fVideo').value);
+  fd.append('tags',       document.getElementById('fTags').value);
+  fd.append('imageUrls',  document.getElementById('fImageUrls').value);
+  fd.append('ingredients',JSON.stringify([...document.querySelectorAll('.ing-input')].map(i=>i.value.trim()).filter(Boolean)));
+  fd.append('steps',      JSON.stringify([...document.querySelectorAll('.step-input')].map(i=>i.value.trim()).filter(Boolean)));
+  const files = document.getElementById('imgUpload').files;
+  for(const f of files) fd.append('images', f);
+
+  const btn = document.getElementById('saveRecipeBtn');
+  btn.disabled=true; btn.textContent='Saving…';
+  try {
+    if(id){ await API.upload(`/api/recipes/${id}`,fd,'PUT'); toast('Recipe updated!','success'); }
+    else  { await API.upload('/api/recipes',fd,'POST');      toast('Recipe added!',   'success'); }
+    closeRecipeModal();
+    loadRecipesAdmin(currentMealFilter);
+  } catch(e){ toast(e.message,'error'); }
+  finally{ btn.disabled=false; btn.textContent='💾 Save Recipe'; }
+}
+
+// Dynamic lists
+function addIng(val=''){
+  const d=document.createElement('div'); d.className='dynamic-item';
+  d.innerHTML=`<input type="text" class="form-input ing-input" value="${val}" placeholder="e.g. 2 cups basmati rice">
+    <button type="button" class="remove-item-btn" onclick="this.parentElement.remove()">✕</button>`;
+  document.getElementById('ingsContainer').appendChild(d);
+}
+function addStep(val=''){
+  const d=document.createElement('div'); d.className='dynamic-item';
+  d.innerHTML=`<textarea class="form-textarea step-input" rows="2" placeholder="Describe this step…">${val}</textarea>
+    <button type="button" class="remove-item-btn" onclick="this.parentElement.remove()">✕</button>`;
+  document.getElementById('stepsContainer').appendChild(d);
+}
+function previewImgs(inp){
+  const wrap = document.getElementById('imgPreviews');
+  [...inp.files].forEach(f=>{ const img=document.createElement('img'); img.className='preview-thumb'; img.src=URL.createObjectURL(f); wrap.appendChild(img); });
+}
+
+// ─── Confirm Delete ──────────────────────────────────────────────────────────
+let pendingDelete = null;
+function confirmDelete(type, id, name){
+  pendingDelete={type,id};
+  document.getElementById('confirmMsg').textContent = `Are you sure you want to delete "${name}"? This cannot be undone.`;
+  document.getElementById('confirmModal').classList.add('open');
+  document.getElementById('confirmOkBtn').onclick = executeDelete;
+}
+function closeConfirm(){ document.getElementById('confirmModal').classList.remove('open'); pendingDelete=null; }
+async function executeDelete(){
+  if(!pendingDelete) return;
+  const {type,id} = pendingDelete; closeConfirm();
+  try {
+    await API.delete(type==='recipe'?`/api/recipes/${id}`:`/api/admin/users/${id}`);
+    toast('Deleted','success');
+    type==='recipe' ? loadRecipesAdmin(currentMealFilter) : loadUsers();
+  } catch(e){ toast(e.message,'error'); }
+}
+
+// Init
+loadDashboard();
+</script>
+</body>
+</html>
