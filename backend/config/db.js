@@ -1,21 +1,13 @@
 require('dotenv').config();
-const mysql = require('mysql2/promise');
+const mongoose = require('mongoose');
 
-const pool = mysql.createPool({
-  host:     process.env.DB_HOST     || 'localhost',
-  port:     parseInt(process.env.DB_PORT) || 3306,
-  user:     process.env.DB_USER     || 'root',
-  password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME     || 'smart_recipe_finder',
-  waitForConnections: true,
-  connectionLimit:    10,
-  queueLimit:         0,
-  dateStrings:        true
-});
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/smart_recipe_finder';
 
-// Test connection on startup
-pool.getConnection()
-  .then(conn => { console.log('✅ MySQL connected'); conn.release(); })
-  .catch(err => { console.error('❌ MySQL error:', err.message); process.exit(1); });
+mongoose.connect(MONGO_URI)
+  .then(() => console.log('✅ MongoDB connected'))
+  .catch(err => {
+    console.error('❌ MongoDB connection error:', err.message);
+    process.exit(1);
+  });
 
-module.exports = pool;
+module.exports = mongoose;

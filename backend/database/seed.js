@@ -1,16 +1,16 @@
 require('dotenv').config();
-const mysql  = require('mysql2/promise');
+const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 
-const DB_CFG = {
-  host:     process.env.DB_HOST     || 'localhost',
-  port:     parseInt(process.env.DB_PORT) || 3306,
-  user:     process.env.DB_USER     || 'root',
-  password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME     || 'smart_recipe_finder',
-  multipleStatements: true
-};
+const User = require('../models/User');
+const Recipe = require('../models/Recipe');
+const Favorite = require('../models/Favorite');
+const MealPlan = require('../models/MealPlan');
+const MealPlanItem = require('../models/MealPlanItem');
+const Feedback = require('../models/Feedback');
+
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/smart_recipe_finder';
 
 // ─── Recipe Helper ─────────────────────────────────────────────
 function r(o){ return { id: uuidv4(), featured: 0, rating: 4.5, ...o }; }
@@ -270,58 +270,43 @@ const RECIPES = [
 ];
 
 async function seed(){
-  let conn;
   try {
-    conn = await mysql.createConnection(DB_CFG);
-    console.log('✅ Connected to MySQL');
+    await mongoose.connect(MONGO_URI);
+    console.log('✅ Connected to MongoDB');
 
     // Clear existing data
-    await conn.execute('SET FOREIGN_KEY_CHECKS=0');
-    await conn.execute('TRUNCATE TABLE meal_plan_items');
-    await conn.execute('TRUNCATE TABLE meal_plans');
-    await conn.execute('TRUNCATE TABLE favorites');
-    await conn.execute('TRUNCATE TABLE recipes');
-    await conn.execute('TRUNCATE TABLE users');
-    await conn.execute('SET FOREIGN_KEY_CHECKS=1');
+    await Promise.all([
+      MealPlanItem.deleteMany({}),
+      MealPlan.deleteMany({}),
+      Favorite.deleteMany({}),
+      Recipe.deleteMany({}),
+      User.deleteMany({}),
+      Feedback.deleteMany({})
+    ]);
 
     // Users
     const adminId = uuidv4(), userId = uuidv4();
-    await conn.execute(
-      'INSERT INTO users (id,username,email,password,role) VALUES (?,?,?,?,?)',
-      [adminId,'admin','admin@smartrecipe.com', bcrypt.hashSync('admin123',10),'admin']
-    );
-    await conn.execute(
-      'INSERT INTO users (id,username,email,password,role) VALUES (?,?,?,?,?)',
-      [userId,'foodlover','foodlover@example.com', bcrypt.hashSync('food123',10),'user']
-    );
+    await User.create([
+      { _id: adminId, username: 'admin', email: 'admin@smartrecipe.com', password: bcrypt.hashSync('admin123', 10), role: 'admin' },
+      { _id: userId, username: 'foodlover', email: 'foodlover@example.com', password: bcrypt.hashSync('food123', 10), role: 'user' }
+    ]);
     console.log('✅ Users seeded');
 
     // Recipes
-    const recipeSQL = `INSERT INTO recipes
-      (id,title,description,category,meal_type,cuisine,prep_time,cook_time,servings,
-       difficulty,ingredients,steps,images,video,tags,featured,rating)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
-
-    for(const rec of RECIPES){
-      await conn.execute(recipeSQL,[
-        rec.id, rec.title, rec.description, rec.category, rec.meal_type,
-        rec.cuisine, rec.prep_time, rec.cook_time, rec.servings, rec.difficulty,
-        JSON.stringify(rec.ingredients), JSON.stringify(rec.steps),
-        JSON.stringify(rec.images), rec.video||'',
-        JSON.stringify(rec.tags), rec.featured?1:0, rec.rating
-      ]);
-    }
+    const mappedRecipes = RECIPES.map(rec => {
+      const recCopy = { ...rec };
+      recCopy._id = recCopy.id;
+      delete recCopy.id;
+      return recCopy;
+    });
+    await Recipe.insertMany(mappedRecipes);
     console.log(`✅ ${RECIPES.length} recipes seeded`);
 
     // Sample favorites
-    await conn.execute(
-      'INSERT INTO favorites (user_id,recipe_id) VALUES (?,?)',
-      [userId, RECIPES[0].id]
-    );
-    await conn.execute(
-      'INSERT INTO favorites (user_id,recipe_id) VALUES (?,?)',
-      [userId, RECIPES[3].id]
-    );
+    await Favorite.create([
+      { user_id: userId, recipe_id: RECIPES[0].id },
+      { user_id: userId, recipe_id: RECIPES[3].id }
+    ]);
     console.log('✅ Favorites seeded');
     console.log('\n🎉 Seed complete!');
     console.log('   Admin: admin / admin123');
@@ -329,7 +314,7 @@ async function seed(){
   } catch(e){
     console.error('❌ Seed error:', e.message);
   } finally {
-    if(conn) await conn.end();
+    await mongoose.disconnect();
     process.exit(0);
   }
 }

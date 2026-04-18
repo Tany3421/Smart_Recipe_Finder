@@ -1,19 +1,20 @@
 const router = require('express').Router();
-const { v4: uuidv4 } = require('uuid');
-const pool = require('../config/db');
+const Feedback = require('../models/Feedback');
 const { auth, adminOnly } = require('../middleware/auth');
 
 // ─── Get Public Feedbacks for a Recipe ────────────────────────
 router.get('/recipe/:id', async (req, res) => {
   try {
-    const [rows] = await pool.execute(`
-      SELECT f.id, f.message, f.created_at, u.username
-      FROM feedbacks f
-      JOIN users u ON f.user_id = u.id
-      WHERE f.recipe_id = ? AND f.type = 'feedback'
-      ORDER BY f.created_at DESC
-    `, [req.params.id]);
-    res.json(rows);
+    const rows = await Feedback.find({ recipe_id: req.params.id, type: 'feedback' })
+                               .populate('user_id', 'username')
+                               .sort('-created_at')
+                               .lean();
+    res.json(rows.map(f => ({
+      id: f._id,
+      message: f.message,
+      created_at: f.created_at,
+      username: f.user_id ? f.user_id.username : 'Unknown'
+    })));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -25,13 +26,15 @@ router.post('/', auth, async (req, res) => {
     const { recipe_id, type, message } = req.body;
     if (!message) return res.status(400).json({ error: 'Message is required' });
     
-    const id = uuidv4();
     const fType = type === 'suggestion' ? 'suggestion' : 'feedback';
     
-    await pool.execute(
-      `INSERT INTO feedbacks (id, user_id, recipe_id, type, message, status) VALUES (?, ?, ?, ?, ?, 'pending')`,
-      [id, req.user.id, recipe_id || null, fType, message]
-    );
+    await Feedback.create({
+      user_id: req.user.id, 
+      recipe_id: recipe_id || null, 
+      type: fType, 
+      message
+    });
+    
     res.status(201).json({ success: true, message: 'Submitted successfully' });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -41,14 +44,21 @@ router.post('/', auth, async (req, res) => {
 // ─── Admin: Get all feedbacks & suggestions ───────────────────
 router.get('/', adminOnly, async (req, res) => {
   try {
-    const [rows] = await pool.execute(`
-      SELECT f.id, f.type, f.message, f.status, f.created_at, u.username, r.title as recipe_title
-      FROM feedbacks f
-      JOIN users u ON f.user_id = u.id
-      LEFT JOIN recipes r ON f.recipe_id = r.id
-      ORDER BY f.created_at DESC
-    `);
-    res.json(rows);
+    const rows = await Feedback.find()
+                               .populate('user_id', 'username')
+                               .populate('recipe_id', 'title')
+                               .sort('-created_at')
+                               .lean();
+    
+    res.json(rows.map(f => ({
+      id: f._id,
+      type: f.type,
+      message: f.message,
+      status: f.status,
+      created_at: f.created_at,
+      username: f.user_id ? f.user_id.username : 'Unknown',
+      recipe_title: f.recipe_id ? f.recipe_id.title : null
+    })));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -57,7 +67,7 @@ router.get('/', adminOnly, async (req, res) => {
 // ─── Admin: Mark as read ──────────────────────────────────────
 router.put('/:id/read', adminOnly, async (req, res) => {
   try {
-    await pool.execute('UPDATE feedbacks SET status = "read" WHERE id = ?', [req.params.id]);
+    await Feedback.findByIdAndUpdate(req.params.id, { status: 'read' });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

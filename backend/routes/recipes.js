@@ -1,6 +1,5 @@
 const router   = require('express').Router();
-const { v4: uuidv4 } = require('uuid');
-const pool     = require('../config/db');
+const Recipe   = require('../models/Recipe');
 const { adminOnly } = require('../middleware/auth');
 const upload   = require('../middleware/upload');
 const multer   = require('multer');
@@ -21,47 +20,54 @@ function parseJSON(val, fallback=[]){
 
 // ─── List / Search ────────────────────────────────────────────
 router.get('/', async (req, res) => {
-  const { search, category, meal_type, cuisine, difficulty, featured,
-          page=1, limit=12 } = req.query;
+  const { search, category, meal_type, cuisine, difficulty, featured, page=1, limit=12 } = req.query;
 
-  let sql  = 'SELECT id,title,description,category,meal_type,cuisine,prep_time,cook_time,servings,difficulty,images,tags,featured,rating,created_at FROM recipes WHERE 1=1';
-  const params = [];
-
+  let query = {};
+  
   if(search){
-    sql += ' AND (title LIKE ? OR description LIKE ?)';
-    params.push(`%${search}%`, `%${search}%`);
+    query.$or = [
+      { title: { $regex: search, $options: 'i' } },
+      { description: { $regex: search, $options: 'i' } }
+    ];
   }
-  if(category){ sql += ' AND category=?'; params.push(category); }
-  if(meal_type){ sql += ' AND meal_type=?'; params.push(meal_type); }
-  if(cuisine)  { sql += ' AND cuisine=?';  params.push(cuisine);  }
-  if(difficulty){ sql += ' AND difficulty=?'; params.push(difficulty); }
-  if(featured === 'true'){ sql += ' AND featured=1'; }
+  if(category) query.category = category;
+  if(meal_type) query.meal_type = meal_type;
+  if(cuisine) query.cuisine = cuisine;
+  if(difficulty) query.difficulty = difficulty;
+  if(featured === 'true') query.featured = true;
 
-  const [allRows] = await pool.execute(sql, params);
-  const total = allRows.length;
-  const start = (parseInt(page)-1)*parseInt(limit);
-  const rows  = allRows.slice(start, start+parseInt(limit));
+  try {
+    const total = await Recipe.countDocuments(query);
+    const start = (parseInt(page)-1)*parseInt(limit);
+    const rowsRaw = await Recipe.find(query).skip(start).limit(parseInt(limit)).lean();
+    const rows = rowsRaw.map(r => { r.id = r._id; return r; });
 
-  res.json({ recipes: rows, total, page: parseInt(page), pages: Math.ceil(total/parseInt(limit)) });
+    res.json({ recipes: rows, total, page: parseInt(page), pages: Math.ceil(total/parseInt(limit)) });
+  } catch(e){ res.status(500).json({ error: e.message }); }
 });
 
 // ─── Categories / Meal Types ──────────────────────────────────
 router.get('/meta', async (req, res) => {
-  const [cats]     = await pool.execute('SELECT DISTINCT category FROM recipes ORDER BY category');
-  const [cuisines] = await pool.execute('SELECT DISTINCT cuisine FROM recipes ORDER BY cuisine');
-  const [mts]      = await pool.execute('SELECT DISTINCT meal_type FROM recipes ORDER BY meal_type');
-  res.json({
-    categories: cats.map(r=>r.category).filter(Boolean),
-    cuisines:   cuisines.map(r=>r.cuisine).filter(Boolean),
-    mealTypes:  mts.map(r=>r.meal_type).filter(Boolean)
-  });
+  try {
+    const cats     = await Recipe.distinct('category');
+    const cuisines = await Recipe.distinct('cuisine');
+    const mts      = await Recipe.distinct('meal_type');
+    res.json({
+      categories: cats.filter(Boolean),
+      cuisines:   cuisines.filter(Boolean),
+      mealTypes:  mts.filter(Boolean)
+    });
+  } catch(e){ res.status(500).json({ error: e.message }); }
 });
 
 // ─── Single Recipe ────────────────────────────────────────────
 router.get('/:id', async (req, res) => {
-  const [[row]] = await pool.execute('SELECT * FROM recipes WHERE id=?', [req.params.id]);
-  if(!row) return res.status(404).json({ error:'Recipe not found' });
-  res.json(row);
+  try {
+    const row = await Recipe.findById(req.params.id).lean();
+    if(!row) return res.status(404).json({ error:'Recipe not found' });
+    row.id = row._id;
+    res.json(row);
+  } catch(e){ res.status(500).json({ error: e.message }); }
 });
 
 // ─── Create ───────────────────────────────────────────────────
@@ -72,8 +78,7 @@ router.post('/', adminOnly, recipeUpload, async (req, res) => {
     const videoFile = req.files?.video?.[0];
     const urlImages = b.imageUrls ? b.imageUrls.split('\n').map(u=>u.trim()).filter(Boolean) : [];
 
-    const recipe = {
-      id: uuidv4(),
+    const recipeInfo = {
       title:       b.title,
       description: b.description||'',
       category:    b.category||'',
@@ -83,22 +88,16 @@ router.post('/', adminOnly, recipeUpload, async (req, res) => {
       cook_time:   parseInt(b.cook_time)||0,
       servings:    parseInt(b.servings)||4,
       difficulty:  b.difficulty||'Medium',
-      ingredients: JSON.stringify(parseJSON(b.ingredients)),
-      steps:       JSON.stringify(parseJSON(b.steps)),
-      images:      JSON.stringify([...urlImages, ...newImages]),
+      ingredients: parseJSON(b.ingredients),
+      steps:       parseJSON(b.steps),
+      images:      [...urlImages, ...newImages],
       video:       videoFile ? `/uploads/videos/${videoFile.filename}` : (b.video||''),
-      tags:        JSON.stringify(b.tags ? b.tags.split(',').map(t=>t.trim()).filter(Boolean) : []),
-      featured:    b.featured==='true' ? 1 : 0,
+      tags:        b.tags ? b.tags.split(',').map(t=>t.trim()).filter(Boolean) : [],
+      featured:    b.featured==='true',
       rating:      parseFloat(b.rating)||4.5
     };
 
-    await pool.execute(
-      `INSERT INTO recipes (id,title,description,category,meal_type,cuisine,prep_time,cook_time,
-       servings,difficulty,ingredients,steps,images,video,tags,featured,rating)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      Object.values(recipe)
-    );
-    const [[created]] = await pool.execute('SELECT * FROM recipes WHERE id=?', [recipe.id]);
+    const created = await Recipe.create(recipeInfo);
     res.status(201).json(created);
   } catch(e){ res.status(500).json({ error: e.message }); }
 });
@@ -106,46 +105,47 @@ router.post('/', adminOnly, recipeUpload, async (req, res) => {
 // ─── Update ───────────────────────────────────────────────────
 router.put('/:id', adminOnly, recipeUpload, async (req, res) => {
   try {
-    const [[existing]] = await pool.execute('SELECT * FROM recipes WHERE id=?', [req.params.id]);
+    const existing = await Recipe.findById(req.params.id).lean();
     if(!existing) return res.status(404).json({ error:'Recipe not found' });
 
     const b = req.body;
     const newImages = req.files?.images?.map(f=>`/uploads/images/${f.filename}`) || [];
     const videoFile = req.files?.video?.[0];
     const urlImages = b.imageUrls ? b.imageUrls.split('\n').map(u=>u.trim()).filter(Boolean) : [];
-    const keepImages = b.keepImages ? (Array.isArray(b.keepImages) ? b.keepImages : [b.keepImages]) : JSON.parse(existing.images||'[]');
+    const keepImages = b.keepImages ? (Array.isArray(b.keepImages) ? b.keepImages : [b.keepImages]) : (existing.images||[]);
 
-    await pool.execute(
-      `UPDATE recipes SET title=?,description=?,category=?,meal_type=?,cuisine=?,
-       prep_time=?,cook_time=?,servings=?,difficulty=?,ingredients=?,steps=?,
-       images=?,video=?,tags=?,featured=?,rating=? WHERE id=?`,
-      [
-        b.title||existing.title, b.description||existing.description,
-        b.category||existing.category, b.meal_type||existing.meal_type,
-        b.cuisine||existing.cuisine,
-        parseInt(b.prep_time)||existing.prep_time, parseInt(b.cook_time)||existing.cook_time,
-        parseInt(b.servings)||existing.servings,   b.difficulty||existing.difficulty,
-        JSON.stringify(parseJSON(b.ingredients||JSON.stringify(JSON.parse(existing.ingredients||'[]')))),
-        JSON.stringify(parseJSON(b.steps||JSON.stringify(JSON.parse(existing.steps||'[]')))),
-        JSON.stringify([...keepImages, ...urlImages, ...newImages]),
-        videoFile ? `/uploads/videos/${videoFile.filename}` : (b.video||existing.video),
-        b.tags ? JSON.stringify(b.tags.split(',').map(t=>t.trim())) : existing.tags,
-        b.featured!==undefined ? (b.featured==='true'?1:0) : existing.featured,
-        parseFloat(b.rating)||existing.rating,
-        req.params.id
-      ]
-    );
-    const [[updated]] = await pool.execute('SELECT * FROM recipes WHERE id=?', [req.params.id]);
+    const updates = {
+      title:       b.title || existing.title,
+      description: b.description || existing.description,
+      category:    b.category || existing.category,
+      meal_type:   b.meal_type || existing.meal_type,
+      cuisine:     b.cuisine || existing.cuisine,
+      prep_time:   b.prep_time ? parseInt(b.prep_time) : existing.prep_time,
+      cook_time:   b.cook_time ? parseInt(b.cook_time) : existing.cook_time,
+      servings:    b.servings ? parseInt(b.servings) : existing.servings,
+      difficulty:  b.difficulty || existing.difficulty,
+      ingredients: b.ingredients ? parseJSON(b.ingredients) : existing.ingredients,
+      steps:       b.steps ? parseJSON(b.steps) : existing.steps,
+      images:      [...keepImages, ...urlImages, ...newImages],
+      video:       videoFile ? `/uploads/videos/${videoFile.filename}` : (b.video || existing.video),
+      tags:        b.tags ? b.tags.split(',').map(t=>t.trim()).filter(Boolean) : existing.tags,
+      featured:    b.featured !== undefined ? b.featured === 'true' : existing.featured,
+      rating:      b.rating ? parseFloat(b.rating) : existing.rating
+    };
+
+    const updated = await Recipe.findByIdAndUpdate(req.params.id, updates, { new: true }).lean();
+    if (updated) updated.id = updated._id;
     res.json(updated);
   } catch(e){ res.status(500).json({ error: e.message }); }
 });
 
 // ─── Delete ───────────────────────────────────────────────────
 router.delete('/:id', adminOnly, async (req, res) => {
-  const [[row]] = await pool.execute('SELECT id FROM recipes WHERE id=?', [req.params.id]);
-  if(!row) return res.status(404).json({ error:'Recipe not found' });
-  await pool.execute('DELETE FROM recipes WHERE id=?', [req.params.id]);
-  res.json({ success: true });
+  try {
+    const deleted = await Recipe.findByIdAndDelete(req.params.id);
+    if(!deleted) return res.status(404).json({ error:'Recipe not found' });
+    res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 // ─── Voice Search ─────────────────────────────────────────────

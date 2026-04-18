@@ -4,7 +4,7 @@ const bcrypt     = require('bcryptjs');
 const jwt        = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
 const { v4: uuidv4 } = require('uuid');
-const pool       = require('../config/db');
+const User       = require('../models/User');
 const { auth }   = require('../middleware/auth');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'recipe-secret';
@@ -12,12 +12,12 @@ const SITE_URL   = process.env.SITE_URL   || 'http://localhost:3000';
 
 function makeToken(user){
   return jwt.sign(
-    { id: user.id, username: user.username, role: user.role },
+    { id: user._id || user.id, username: user.username, role: user.role },
     JWT_SECRET, { expiresIn: '7d' }
   );
 }
 
-function safeUser(u){ return { id:u.id, username:u.username, email:u.email, role:u.role }; }
+function safeUser(u){ return { id: u._id || u.id, username:u.username, email:u.email, role:u.role }; }
 
 // ─── Register ─────────────────────────────────────────────────
 router.post('/register', async (req, res) => {
@@ -27,29 +27,21 @@ router.post('/register', async (req, res) => {
   if(password.length < 6)
     return res.status(400).json({ error:'Password must be at least 6 characters' });
   try {
-    const [exist] = await pool.execute(
-      'SELECT id FROM users WHERE email=? OR username=?', [email, username]
-    );
-    if(exist.length) return res.status(409).json({ error:'Email or username already taken' });
+    const exist = await User.findOne({ $or: [{ email }, { username }] }).select('_id').lean();
+    if(exist) return res.status(409).json({ error:'Email or username already taken' });
 
-    const id   = uuidv4();
     const hash = bcrypt.hashSync(password, 10);
-    await pool.execute(
-      'INSERT INTO users (id,username,email,password) VALUES (?,?,?,?)',
-      [id, username, email, hash]
-    );
-    const [[user]] = await pool.execute('SELECT * FROM users WHERE id=?', [id]);
+    const user = await User.create({ username, email, password: hash });
+    
     res.json({ token: makeToken(user), user: safeUser(user) });
   } catch(e){ res.status(500).json({ error: e.message }); }
 });
 
 // ─── Login ────────────────────────────────────────────────────
 router.post('/login', async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password } = req.body; // email can be username or email
   try {
-    const [[user]] = await pool.execute(
-      'SELECT * FROM users WHERE email=? OR username=?', [email, email]
-    );
+    const user = await User.findOne({ $or: [{ email }, { username: email }] }).lean();
     if(!user || !bcrypt.compareSync(password, user.password))
       return res.status(401).json({ error:'Invalid credentials' });
     res.json({ token: makeToken(user), user: safeUser(user) });
@@ -58,9 +50,11 @@ router.post('/login', async (req, res) => {
 
 // ─── Me ───────────────────────────────────────────────────────
 router.get('/me', auth, async (req, res) => {
-  const [[user]] = await pool.execute('SELECT * FROM users WHERE id=?', [req.user.id]);
-  if(!user) return res.status(404).json({ error:'User not found' });
-  res.json(safeUser(user));
+  try {
+    const user = await User.findById(req.user.id).lean();
+    if(!user) return res.status(404).json({ error:'User not found' });
+    res.json(safeUser(user));
+  } catch(e){ res.status(500).json({ error: e.message }); }
 });
 
 // ─── Forgot Password ──────────────────────────────────────────
@@ -68,15 +62,12 @@ router.post('/forgot-password', async (req, res) => {
   const { email } = req.body;
   if(!email) return res.status(400).json({ error:'Email is required' });
   try {
-    const [[user]] = await pool.execute('SELECT * FROM users WHERE email=?', [email]);
+    const user = await User.findOne({ email }).lean();
     if(!user) return res.status(404).json({ error:'No account with that email' });
 
     const token  = uuidv4();
     const expiry = Date.now() + 3_600_000; // 1 hour
-    await pool.execute(
-      'UPDATE users SET reset_token=?, reset_expiry=? WHERE id=?',
-      [token, expiry, user.id]
-    );
+    await User.findByIdAndUpdate(user._id, { reset_token: token, reset_expiry: expiry });
 
     // Send email
     const transporter = nodemailer.createTransport({
@@ -116,17 +107,19 @@ router.post('/reset-password', async (req, res) => {
   if(password.length < 6)
     return res.status(400).json({ error:'Password must be at least 6 characters' });
   try {
-    const [[user]] = await pool.execute(
-      'SELECT * FROM users WHERE reset_token=? AND reset_expiry > ?',
-      [token, Date.now()]
-    );
+    const user = await User.findOne({
+      reset_token: token,
+      reset_expiry: { $gt: Date.now() }
+    }).lean();
+    
     if(!user) return res.status(400).json({ error:'Invalid or expired reset link' });
 
     const hash = bcrypt.hashSync(password, 10);
-    await pool.execute(
-      'UPDATE users SET password=?, reset_token=NULL, reset_expiry=NULL WHERE id=?',
-      [hash, user.id]
-    );
+    await User.findByIdAndUpdate(user._id, { 
+      password: hash, 
+      reset_token: null, 
+      reset_expiry: null 
+    });
     res.json({ success: true });
   } catch(e){ res.status(500).json({ error: e.message }); }
 });

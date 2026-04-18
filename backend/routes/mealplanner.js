@@ -1,6 +1,7 @@
 const router = require('express').Router();
-const { v4: uuidv4 } = require('uuid');
-const pool   = require('../config/db');
+const MealPlan = require('../models/MealPlan');
+const MealPlanItem = require('../models/MealPlanItem');
+const Recipe = require('../models/Recipe');
 const { auth } = require('../middleware/auth');
 
 // Helper – get Monday of given date string
@@ -18,31 +19,35 @@ router.get('/', auth, async (req, res) => {
     const week = weekMonday(req.query.week);
 
     // Find or create plan
-    let [[plan]] = await pool.execute(
-      'SELECT * FROM meal_plans WHERE user_id=? AND week_start=?',
-      [req.user.id, week]
-    );
+    let plan = await MealPlan.findOne({ user_id: req.user.id, week_start: new Date(week) }).lean();
     if(!plan){
-      const planId = uuidv4();
-      await pool.execute(
-        'INSERT INTO meal_plans (id,user_id,week_start) VALUES (?,?,?)',
-        [planId, req.user.id, week]
-      );
-      plan = { id: planId, user_id: req.user.id, week_start: week };
+      plan = await MealPlan.create({ user_id: req.user.id, week_start: new Date(week) });
     }
 
-    const [items] = await pool.execute(
-      `SELECT mpi.id, mpi.day_of_week, mpi.meal_type,
-              r.id as recipe_id, r.title, r.images, r.prep_time, r.cook_time,
-              r.difficulty, r.category, r.cuisine, r.rating
-       FROM meal_plan_items mpi
-       JOIN recipes r ON mpi.recipe_id=r.id
-       WHERE mpi.plan_id=?
-       ORDER BY mpi.day_of_week, mpi.meal_type`,
-      [plan.id]
-    );
+    const itemsRaw = await MealPlanItem.find({ plan_id: plan._id })
+      .populate('recipe_id')
+      .sort('day_of_week meal_type')
+      .lean();
 
-    res.json({ plan_id: plan.id, week_start: week, items });
+    const items = itemsRaw.map(i => {
+      if(!i.recipe_id) return null;
+      return {
+        id: i._id,
+        day_of_week: i.day_of_week,
+        meal_type: i.meal_type,
+        recipe_id: i.recipe_id._id,
+        title: i.recipe_id.title,
+        images: i.recipe_id.images,
+        prep_time: i.recipe_id.prep_time,
+        cook_time: i.recipe_id.cook_time,
+        difficulty: i.recipe_id.difficulty,
+        category: i.recipe_id.category,
+        cuisine: i.recipe_id.cuisine,
+        rating: i.recipe_id.rating
+      };
+    }).filter(Boolean);
+
+    res.json({ plan_id: plan._id || plan.id, week_start: week, items });
   } catch(e){ res.status(500).json({ error: e.message }); }
 });
 
@@ -56,51 +61,38 @@ router.post('/item', auth, async (req, res) => {
     const mon = weekMonday(week);
 
     // Get or create plan
-    let [[plan]] = await pool.execute(
-      'SELECT * FROM meal_plans WHERE user_id=? AND week_start=?',
-      [req.user.id, mon]
-    );
+    let plan = await MealPlan.findOne({ user_id: req.user.id, week_start: new Date(mon) });
     if(!plan){
-      const planId = uuidv4();
-      await pool.execute(
-        'INSERT INTO meal_plans (id,user_id,week_start) VALUES (?,?,?)',
-        [planId, req.user.id, mon]
-      );
-      plan = { id: planId };
+      plan = await MealPlan.create({ user_id: req.user.id, week_start: new Date(mon) });
     }
 
     // Delete existing slot
-    await pool.execute(
-      'DELETE FROM meal_plan_items WHERE plan_id=? AND day_of_week=? AND meal_type=?',
-      [plan.id, day_of_week, meal_type]
-    );
+    await MealPlanItem.findOneAndDelete({ plan_id: plan._id, day_of_week, meal_type });
 
     // Verify recipe exists
-    const [[recipe]] = await pool.execute('SELECT id FROM recipes WHERE id=?', [recipe_id]);
+    const recipe = await Recipe.findById(recipe_id).lean();
     if(!recipe) return res.status(404).json({ error:'Recipe not found' });
 
-    const itemId = uuidv4();
-    await pool.execute(
-      'INSERT INTO meal_plan_items (id,plan_id,day_of_week,meal_type,recipe_id) VALUES (?,?,?,?,?)',
-      [itemId, plan.id, day_of_week, meal_type, recipe_id]
-    );
+    const newItem = await MealPlanItem.create({
+      plan_id: plan._id,
+      day_of_week,
+      meal_type,
+      recipe_id
+    });
 
-    res.json({ success: true, item_id: itemId });
+    res.json({ success: true, item_id: newItem._id });
   } catch(e){ res.status(500).json({ error: e.message }); }
 });
 
 // Remove a slot item
 router.delete('/item/:itemId', auth, async (req, res) => {
   try {
-    // Verify item belongs to this user
-    const [[item]] = await pool.execute(
-      `SELECT mpi.id FROM meal_plan_items mpi
-       JOIN meal_plans mp ON mpi.plan_id=mp.id
-       WHERE mpi.id=? AND mp.user_id=?`,
-      [req.params.itemId, req.user.id]
-    );
-    if(!item) return res.status(404).json({ error:'Item not found' });
-    await pool.execute('DELETE FROM meal_plan_items WHERE id=?', [req.params.itemId]);
+    const item = await MealPlanItem.findById(req.params.itemId).populate('plan_id').lean();
+    if(!item || item.plan_id.user_id.toString() !== req.user.id) {
+      return res.status(404).json({ error:'Item not found' });
+    }
+    
+    await MealPlanItem.findByIdAndDelete(req.params.itemId);
     res.json({ success: true });
   } catch(e){ res.status(500).json({ error: e.message }); }
 });
@@ -109,28 +101,25 @@ router.delete('/item/:itemId', auth, async (req, res) => {
 router.get('/shopping-list', auth, async (req, res) => {
   try {
     const week = weekMonday(req.query.week);
-    const [[plan]] = await pool.execute(
-      'SELECT id FROM meal_plans WHERE user_id=? AND week_start=?',
-      [req.user.id, week]
-    );
+    const plan = await MealPlan.findOne({ user_id: req.user.id, week_start: new Date(week) }).lean();
     if(!plan) return res.json({ ingredients: [], recipes: [] });
 
-    const [items] = await pool.execute(
-      `SELECT DISTINCT r.title, r.ingredients, mpi.meal_type, mpi.day_of_week
-       FROM meal_plan_items mpi
-       JOIN recipes r ON mpi.recipe_id=r.id
-       WHERE mpi.plan_id=?`,
-      [plan.id]
-    );
+    const items = await MealPlanItem.find({ plan_id: plan._id })
+      .populate('recipe_id')
+      .lean();
 
     const allIngredients = [];
+    const uniqueRecipes = new Set();
+    
     items.forEach(item => {
-      const ings = typeof item.ingredients === 'string'
-        ? JSON.parse(item.ingredients) : item.ingredients;
-      ings.forEach(ing => allIngredients.push({ ingredient: ing, recipe: item.title }));
+      if(!item.recipe_id) return;
+      uniqueRecipes.add(item.recipe_id.title);
+      
+      const ings = item.recipe_id.ingredients || [];
+      ings.forEach(ing => allIngredients.push({ ingredient: ing, recipe: item.recipe_id.title }));
     });
 
-    res.json({ ingredients: allIngredients, recipes: items.map(i=>i.title) });
+    res.json({ ingredients: allIngredients, recipes: Array.from(uniqueRecipes) });
   } catch(e){ res.status(500).json({ error: e.message }); }
 });
 
